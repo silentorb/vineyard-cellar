@@ -4,6 +4,7 @@
 import Vineyard = require('vineyard')
 var Lawn = require('vineyard-lawn')
 var uuid = require('node-uuid')
+var when = require('when')
 
 class Cellar extends Vineyard.Bulb {
 
@@ -17,7 +18,7 @@ class Cellar extends Vineyard.Bulb {
     app.use(multer({dest: this.config.paths.temp}))
     var lawn = this.vineyard.bulbs.lawn
     lawn.listen_user_http('/vineyard/upload', (req, res, user)=> this.upload(req, res, user))
-    if (this.config.paths.cache) {
+    if (this.config.paths.cache && this.config.templates) {
       lawn.listen_user_http('/vineyard/cellar/:template/:guid.:ext', (req, res, user)=> this.file_download(req, res, user), 'get')
     }
   }
@@ -62,33 +63,78 @@ class Cellar extends Vineyard.Bulb {
   }
 
   file_download(req, res, user) {
-    var guid = req.params.guid;
-    var ext = req.params.ext;
+    var template_name = req.params.template
+    var guid = req.params.guid
+    var ext = req.params.ext
+
+    var template = this.config.templates[template_name]
+    if (!template)
+      throw new HttpError('Invalid template: ' + template_name + '.', 404)
+
     if (!guid.match(/[\w\-]+/) || !ext.match(/\w+/))
       throw new HttpError('Invalid File Name', 400)
 
-    var path = require('path');console.log(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext)
-    var filepath = path.join(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext)
+    var path = require('path')
+    var filepath = path.join(this.vineyard.root_path, this.config.paths.cache, template_name, guid + '.' + ext)
     console.log(filepath)
     return Cellar.file_exists(filepath)
       .then((exists)=> {
-        if (!exists)
-          throw new Lawn.HttpError('File Not Found', 404)
+        if (exists) {
+          res.sendFile(filepath)
+          return
+        }
 
-        var query = this.ground.create_query('file')
-        query.add_key_filter(req.params.guid)
-        var fortress = this.vineyard.bulbs.fortress
+        var source_file = path.join(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext)
+        return Cellar.file_exists(source_file)
+          .then((exists)=> {
+            if (!exists)
+              throw new Lawn.HttpError('File Not Found', 404)
 
-        res.sendfile(filepath)
-
-        //fortress.query_access(user, query)
-        //  .then((result)=> {
-        //    if (result.access)
-        //      res.sendfile(filepath)
-        //    else
-        //      //throw new Lawn.Authorization_Error('Access Denied', user)
-        //  })
+            return this.resize(template, source_file, filepath)
+              .then(()=> {
+                res.sendFile(filepath)
+              })
+          })
       })
+  }
+
+  resize(template, source, dest):Promise {
+    var gm = require('gm')
+    var new_width = template.width
+    var new_height = template.height
+    var def = new when.defer()
+
+    gm(source)
+      .options({imageMagick: true})
+      .size(source, (error, original)=> {
+        var desired_aspect = new_width / new_height
+        var orig_aspect = original.width / original.height
+        var trim
+
+        var operation = gm(source)
+          .options({imageMagick: true})
+
+        if (desired_aspect > orig_aspect) {
+          trim = original.height - (original.width / desired_aspect)
+          operation = operation.crop(original.width, original.height - trim, 0, trim / 2)
+        }
+        else {
+          trim = original.width - (original.height * desired_aspect)
+          operation = operation.crop(original.width - trim, original.height, trim / 2, 0)
+        }
+
+        operation.resize(new_width, new_height)
+          .write(dest, function (err) {
+            if (err) {
+              console.log('error writing file ' + dest, err)
+              def.reject(err)
+            }
+            else {
+              def.resolve()
+            }
+          })
+      })
+    return def.promise
   }
 
   private static file_exists(filepath:string):Promise {

@@ -1,6 +1,6 @@
 {
   "name": "vineyard-cellar",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "File storage management for Vineyard",
   "main": "cellar.js",
   "repository": {
@@ -10,6 +10,7 @@
   "author": "Christopher W. Johnson",
   "license": "MIT",
   "dependencies": {
+    "gm": "^1.17.0",
     "multer": "^0.1.8",
     "node-uuid": "^1.4.3"
   },

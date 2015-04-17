@@ -9,6 +9,7 @@ var __extends = this.__extends || function (d, b) {
 var Vineyard = require('vineyard');
 var Lawn = require('vineyard-lawn');
 var uuid = require('node-uuid');
+var when = require('when');
 
 var Cellar = (function (_super) {
     __extends(Cellar, _super);
@@ -31,7 +32,7 @@ var Cellar = (function (_super) {
         lawn.listen_user_http('/vineyard/upload', function (req, res, user) {
             return _this.upload(req, res, user);
         });
-        if (this.config.paths.cache) {
+        if (this.config.paths.cache && this.config.templates) {
             lawn.listen_user_http('/vineyard/cellar/:template/:guid.:ext', function (req, res, user) {
                 return _this.file_download(req, res, user);
             }, 'get');
@@ -79,32 +80,69 @@ var Cellar = (function (_super) {
 
     Cellar.prototype.file_download = function (req, res, user) {
         var _this = this;
+        var template_name = req.params.template;
         var guid = req.params.guid;
         var ext = req.params.ext;
+
+        var template = this.config.templates[template_name];
+        if (!template)
+            throw new HttpError('Invalid template: ' + template_name + '.', 404);
+
         if (!guid.match(/[\w\-]+/) || !ext.match(/\w+/))
             throw new HttpError('Invalid File Name', 400);
 
         var path = require('path');
-        console.log(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext);
-        var filepath = path.join(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext);
+        var filepath = path.join(this.vineyard.root_path, this.config.paths.cache, template_name, guid + '.' + ext);
         console.log(filepath);
         return Cellar.file_exists(filepath).then(function (exists) {
-            if (!exists)
-                throw new Lawn.HttpError('File Not Found', 404);
+            if (exists) {
+                res.sendFile(filepath);
+                return;
+            }
 
-            var query = _this.ground.create_query('file');
-            query.add_key_filter(req.params.guid);
-            var fortress = _this.vineyard.bulbs.fortress;
+            var source_file = path.join(_this.vineyard.root_path, _this.config.paths.files, guid + '.' + ext);
+            return Cellar.file_exists(source_file).then(function (exists) {
+                if (!exists)
+                    throw new Lawn.HttpError('File Not Found', 404);
 
-            res.sendfile(filepath);
-            //fortress.query_access(user, query)
-            //  .then((result)=> {
-            //    if (result.access)
-            //      res.sendfile(filepath)
-            //    else
-            //      //throw new Lawn.Authorization_Error('Access Denied', user)
-            //  })
+                return _this.resize(template, source_file, filepath).then(function () {
+                    res.sendFile(filepath);
+                });
+            });
         });
+    };
+
+    Cellar.prototype.resize = function (template, source, dest) {
+        var gm = require('gm');
+        var new_width = template.width;
+        var new_height = template.height;
+        var def = new when.defer();
+
+        gm(source).options({ imageMagick: true }).size(source, function (error, original) {
+            var desired_aspect = new_width / new_height;
+            var orig_aspect = original.width / original.height;
+            var trim;
+
+            var operation = gm(source).options({ imageMagick: true });
+
+            if (desired_aspect > orig_aspect) {
+                trim = original.height - (original.width / desired_aspect);
+                operation = operation.crop(original.width, original.height - trim, 0, trim / 2);
+            } else {
+                trim = original.width - (original.height * desired_aspect);
+                operation = operation.crop(original.width - trim, original.height, trim / 2, 0);
+            }
+
+            operation.resize(new_width, new_height).write(dest, function (err) {
+                if (err) {
+                    console.log('error writing file ' + dest, err);
+                    def.reject(err);
+                } else {
+                    def.resolve();
+                }
+            });
+        });
+        return def.promise;
     };
 
     Cellar.file_exists = function (filepath) {
