@@ -7,6 +7,7 @@ var __extends = this.__extends || function (d, b) {
     d.prototype = new __();
 };
 var Vineyard = require('vineyard');
+var Lawn = require('vineyard-lawn');
 var uuid = require('node-uuid');
 
 var Cellar = (function (_super) {
@@ -30,7 +31,11 @@ var Cellar = (function (_super) {
         lawn.listen_user_http('/vineyard/upload', function (req, res, user) {
             return _this.upload(req, res, user);
         });
-        //this.lawn.listen_user_http('/file/:guid.:ext', (req, res, user)=> this.file_download(req, res, user), 'get')
+        if (this.config.paths.cache) {
+            lawn.listen_user_http('/vineyard/cellar/:template/:guid.:ext', function (req, res, user) {
+                return _this.file_download(req, res, user);
+            }, 'get');
+        }
     };
 
     Cellar.prototype.upload = function (req, res, user) {
@@ -54,7 +59,7 @@ var Cellar = (function (_super) {
         var path = require('path');
         var ext = path.extname(file.originalname) || '';
         var filename = guid + ext;
-        var filepath = (this.config.paths.file) + '/' + filename;
+        var filepath = (this.config.paths.files) + '/' + filename;
         var fs = require('fs');
         fs.rename(file.path, filepath);
 
@@ -80,23 +85,25 @@ var Cellar = (function (_super) {
             throw new HttpError('Invalid File Name', 400);
 
         var path = require('path');
-        var filepath = path.join(this.vineyard.root_path, this.config.paths.file || 'files', guid + '.' + ext);
+        console.log(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext);
+        var filepath = path.join(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext);
         console.log(filepath);
         return Cellar.file_exists(filepath).then(function (exists) {
             if (!exists)
-                throw new HttpError('File Not Found', 404);
+                throw new Lawn.HttpError('File Not Found', 404);
 
-            //          throw new Error('File Not Found')
             var query = _this.ground.create_query('file');
             query.add_key_filter(req.params.guid);
             var fortress = _this.vineyard.bulbs.fortress;
 
-            fortress.query_access(user, query).then(function (result) {
-                if (result.access)
-                    res.sendfile(filepath);
-                else
-                    throw new Authorization_Error('Access Denied', user);
-            });
+            res.sendfile(filepath);
+            //fortress.query_access(user, query)
+            //  .then((result)=> {
+            //    if (result.access)
+            //      res.sendfile(filepath)
+            //    else
+            //      //throw new Lawn.Authorization_Error('Access Denied', user)
+            //  })
         });
     };
 

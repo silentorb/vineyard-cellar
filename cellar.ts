@@ -2,6 +2,7 @@
 /// <reference path="../vineyard-lawn/lawn.d.ts"/>
 
 import Vineyard = require('vineyard')
+var Lawn = require('vineyard-lawn')
 var uuid = require('node-uuid')
 
 class Cellar extends Vineyard.Bulb {
@@ -16,7 +17,9 @@ class Cellar extends Vineyard.Bulb {
     app.use(multer({dest: this.config.paths.temp}))
     var lawn = this.vineyard.bulbs.lawn
     lawn.listen_user_http('/vineyard/upload', (req, res, user)=> this.upload(req, res, user))
-    //this.lawn.listen_user_http('/file/:guid.:ext', (req, res, user)=> this.file_download(req, res, user), 'get')
+    if (this.config.paths.cache) {
+      lawn.listen_user_http('/vineyard/cellar/:template/:guid.:ext', (req, res, user)=> this.file_download(req, res, user), 'get')
+    }
   }
 
   upload(req, res, user) {
@@ -39,7 +42,7 @@ class Cellar extends Vineyard.Bulb {
     var path = require('path')
     var ext = path.extname(file.originalname) || ''
     var filename = guid + ext
-    var filepath = (this.config.paths.file) + '/' + filename
+    var filepath = (this.config.paths.files) + '/' + filename
     var fs = require('fs')
     fs.rename(file.path, filepath);
 
@@ -64,26 +67,27 @@ class Cellar extends Vineyard.Bulb {
     if (!guid.match(/[\w\-]+/) || !ext.match(/\w+/))
       throw new HttpError('Invalid File Name', 400)
 
-    var path = require('path')
-    var filepath = path.join(this.vineyard.root_path, this.config.paths.file || 'files', guid + '.' + ext)
+    var path = require('path');console.log(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext)
+    var filepath = path.join(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext)
     console.log(filepath)
     return Cellar.file_exists(filepath)
       .then((exists)=> {
         if (!exists)
-          throw new HttpError('File Not Found', 404)
-//          throw new Error('File Not Found')
+          throw new Lawn.HttpError('File Not Found', 404)
 
         var query = this.ground.create_query('file')
         query.add_key_filter(req.params.guid)
         var fortress = this.vineyard.bulbs.fortress
 
-        fortress.query_access(user, query)
-          .then((result)=> {
-            if (result.access)
-              res.sendfile(filepath)
-            else
-              throw new Authorization_Error('Access Denied', user)
-          })
+        res.sendfile(filepath)
+
+        //fortress.query_access(user, query)
+        //  .then((result)=> {
+        //    if (result.access)
+        //      res.sendfile(filepath)
+        //    else
+        //      //throw new Lawn.Authorization_Error('Access Denied', user)
+        //  })
       })
   }
 
