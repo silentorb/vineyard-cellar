@@ -1,0 +1,20 @@
+{
+  "name": "vineyard-cellar",
+  "version": "0.0.1",
+  "description": "File storage management for Vineyard",
+  "main": "cellar.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/silentorb/vineyard-grove.git"
+  },
+  "author": "Christopher W. Johnson",
+  "license": "MIT",
+  "dependencies": {
+    "multer": "^0.1.8",
+    "node-uuid": "^1.4.3"
+  },
+  "devDependencies": {
+    "grunt": "~0.4.x",
+    "grunt-ts": "~1.x.x"
+  }
+}
