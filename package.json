@@ -5,7 +5,7 @@
   "main": "cellar.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/silentorb/vineyard-grove.git"
+    "url": "https://github.com/silentorb/vineyard-cellar.git"
   },
   "author": "Christopher W. Johnson",
   "license": "MIT",
