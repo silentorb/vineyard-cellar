@@ -10,6 +10,7 @@ var Vineyard = require('vineyard');
 var Lawn = require('vineyard-lawn');
 var uuid = require('node-uuid');
 var when = require('when');
+var MetaHub = require('vineyard-metahub');
 
 var Cellar = (function (_super) {
     __extends(Cellar, _super);
@@ -42,39 +43,47 @@ var Cellar = (function (_super) {
     Cellar.prototype.upload = function (req, res, user) {
         var _this = this;
         var body = req.body;
-        console.log('files', req.files);
-        console.log('req.body', body);
-        var guid, file = req.files.file;
-        if (body.info) {
-            var info = JSON.parse(body.info);
-            if (info.guid) {
-                if (!info.guid.match(/[\w\-]+/))
-                    throw new HttpError('Invalid guid: ' + info.guid + '.', 400);
 
-                guid = info.guid;
+        //console.log('files', req.files)
+        //console.log('req.body', body)
+        var files = req.files.files;
+        files = MetaHub.is_array(files) ? files : [files];
+
+        var promises = files.map(function (file) {
+            var guid;
+            if (body.info) {
+                var info = JSON.parse(body.info);
+                if (info.guid) {
+                    if (!info.guid.match(/[\w\-]+/))
+                        throw new HttpError('Invalid guid: ' + info.guid + '.', 400);
+
+                    guid = info.guid;
+                }
             }
-        }
 
-        guid = guid || uuid.v1();
+            guid = guid || uuid.v1();
 
-        var path = require('path');
-        var ext = path.extname(file.originalname) || '';
-        var filename = guid + ext;
-        var filepath = (this.config.paths.files) + '/' + filename;
-        var fs = require('fs');
-        fs.rename(file.path, filepath);
+            var path = require('path');
+            var ext = path.extname(file.originalname) || '';
+            var filename = guid + ext;
+            var filepath = (_this.config.paths.files) + '/' + filename;
+            var fs = require('fs');
+            fs.rename(file.path, filepath);
 
-        // !!! Add check if file already exists
-        return this.ground.update_object('file', {
-            guid: guid,
-            name: filename,
-            path: file.path,
-            size: file.size,
-            extension: ext.substring(1),
-            status: 1
-        }, user).then(function (object) {
-            res.send({ file: object });
-            _this.invoke('file.uploaded', object);
+            // !!! Add check if file already exists
+            return _this.ground.update_object('file', {
+                guid: guid,
+                name: filename,
+                path: file.path,
+                size: file.size,
+                extension: ext.substring(1),
+                status: 1
+            }, user);
+        });
+
+        return when.all(promises).then(function (objects) {
+            res.send({ objects: objects });
+            _this.invoke('files.uploaded', objects);
         });
     };
 
@@ -92,8 +101,10 @@ var Cellar = (function (_super) {
             throw new HttpError('Invalid File Name', 400);
 
         var path = require('path');
-        var filepath = path.join(this.vineyard.root_path, this.config.paths.cache, template_name, guid + '.' + ext);
-        console.log(filepath);
+        var template_folder = path.join(this.vineyard.root_path, this.config.paths.cache, template_name);
+        var filepath = path.join(template_folder, guid + '.' + ext);
+
+        //console.log(filepath)
         return Cellar.file_exists(filepath).then(function (exists) {
             if (exists) {
                 res.sendFile(filepath);
@@ -101,7 +112,9 @@ var Cellar = (function (_super) {
             }
 
             var source_file = path.join(_this.vineyard.root_path, _this.config.paths.files, guid + '.' + ext);
-            return Cellar.file_exists(source_file).then(function (exists) {
+            return _this.assure_folder(template_folder).then(function () {
+                return Cellar.file_exists(source_file);
+            }).then(function (exists) {
                 if (!exists)
                     throw new Lawn.HttpError('File Not Found', 404);
 
@@ -109,6 +122,20 @@ var Cellar = (function (_super) {
                     res.sendFile(filepath);
                 });
             });
+        });
+    };
+
+    Cellar.prototype.assure_folder = function (path) {
+        return Cellar.file_exists(path).then(function (exists) {
+            if (exists)
+                return when.resolve();
+
+            var def = when.defer();
+            var fs = require('fs');
+            fs.mkdir(path, function (err) {
+                def.resolve();
+            });
+            return def.promise;
         });
     };
 
@@ -135,7 +162,7 @@ var Cellar = (function (_super) {
 
             operation.resize(new_width, new_height).write(dest, function (err) {
                 if (err) {
-                    console.log('error writing file ' + dest, err);
+                    console.error('error writing file ' + dest, err);
                     def.reject(err);
                 } else {
                     def.resolve();

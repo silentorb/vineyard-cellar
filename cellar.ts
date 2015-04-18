@@ -5,6 +5,7 @@ import Vineyard = require('vineyard')
 var Lawn = require('vineyard-lawn')
 var uuid = require('node-uuid')
 var when = require('when')
+var MetaHub = require('vineyard-metahub')
 
 class Cellar extends Vineyard.Bulb {
 
@@ -25,40 +26,49 @@ class Cellar extends Vineyard.Bulb {
 
   upload(req, res, user) {
     var body = req.body
-    console.log('files', req.files)
-    console.log('req.body', body)
-    var guid, file = req.files.file;
-    if (body.info) {
-      var info = JSON.parse(body.info)
-      if (info.guid) {
-        if (!info.guid.match(/[\w\-]+/))
-          throw new HttpError('Invalid guid: ' + info.guid + '.', 400)
+    //console.log('files', req.files)
+    //console.log('req.body', body)
+    var files = req.files.files
+    files = MetaHub.is_array(files)
+      ? files
+      : [files]
 
-        guid = info.guid
+    var promises = files.map((file)=> {
+      var guid
+      if (body.info) {
+        var info = JSON.parse(body.info)
+        if (info.guid) {
+          if (!info.guid.match(/[\w\-]+/))
+            throw new HttpError('Invalid guid: ' + info.guid + '.', 400)
+
+          guid = info.guid
+        }
       }
-    }
 
-    guid = guid || uuid.v1()
+      guid = guid || uuid.v1()
 
-    var path = require('path')
-    var ext = path.extname(file.originalname) || ''
-    var filename = guid + ext
-    var filepath = (this.config.paths.files) + '/' + filename
-    var fs = require('fs')
-    fs.rename(file.path, filepath);
+      var path = require('path')
+      var ext = path.extname(file.originalname) || ''
+      var filename = guid + ext
+      var filepath = (this.config.paths.files) + '/' + filename
+      var fs = require('fs')
+      fs.rename(file.path, filepath);
 
-    // !!! Add check if file already exists
-    return this.ground.update_object('file', {
-      guid: guid,
-      name: filename,
-      path: file.path,
-      size: file.size,
-      extension: ext.substring(1),
-      status: 1
-    }, user)
-      .then((object)=> {
-        res.send({file: object})
-        this.invoke('file.uploaded', object)
+      // !!! Add check if file already exists
+      return this.ground.update_object('file', {
+        guid: guid,
+        name: filename,
+        path: file.path,
+        size: file.size,
+        extension: ext.substring(1),
+        status: 1
+      }, user)
+    })
+
+    return when.all(promises)
+      .then((objects)=> {
+        res.send({objects: objects})
+        this.invoke('files.uploaded', objects)
       })
   }
 
@@ -75,8 +85,9 @@ class Cellar extends Vineyard.Bulb {
       throw new HttpError('Invalid File Name', 400)
 
     var path = require('path')
-    var filepath = path.join(this.vineyard.root_path, this.config.paths.cache, template_name, guid + '.' + ext)
-    console.log(filepath)
+    var template_folder = path.join(this.vineyard.root_path, this.config.paths.cache, template_name)
+    var filepath = path.join(template_folder, guid + '.' + ext)
+    //console.log(filepath)
     return Cellar.file_exists(filepath)
       .then((exists)=> {
         if (exists) {
@@ -85,7 +96,8 @@ class Cellar extends Vineyard.Bulb {
         }
 
         var source_file = path.join(this.vineyard.root_path, this.config.paths.files, guid + '.' + ext)
-        return Cellar.file_exists(source_file)
+        return this.assure_folder(template_folder)
+          .then(()=> Cellar.file_exists(source_file))
           .then((exists)=> {
             if (!exists)
               throw new Lawn.HttpError('File Not Found', 404)
@@ -95,6 +107,21 @@ class Cellar extends Vineyard.Bulb {
                 res.sendFile(filepath)
               })
           })
+      })
+  }
+
+  assure_folder(path) {
+    return Cellar.file_exists(path)
+      .then((exists)=> {
+        if (exists)
+          return when.resolve()
+
+        var def = when.defer()
+        var fs = require('fs')
+        fs.mkdir(path, (err)=> {
+          def.resolve()
+        })
+        return def.promise
       })
   }
 
@@ -126,7 +153,7 @@ class Cellar extends Vineyard.Bulb {
         operation.resize(new_width, new_height)
           .write(dest, function (err) {
             if (err) {
-              console.log('error writing file ' + dest, err)
+              console.error('error writing file ' + dest, err)
               def.reject(err)
             }
             else {
