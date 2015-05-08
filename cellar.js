@@ -160,7 +160,7 @@ var Cellar = (function (_super) {
                 operation = operation.crop(original.width - trim, original.height, trim / 2, 0);
             }
 
-            operation.resize(new_width, new_height).write(dest, function (err) {
+            operation.resize(new_width, new_height, '!').write(dest, function (err) {
                 if (err) {
                     console.error('error writing file ' + dest, err);
                     def.reject(err);

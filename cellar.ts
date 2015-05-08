@@ -150,7 +150,7 @@ class Cellar extends Vineyard.Bulb {
           operation = operation.crop(original.width - trim, original.height, trim / 2, 0)
         }
 
-        operation.resize(new_width, new_height)
+        operation.resize(new_width, new_height, '!')
           .write(dest, function (err) {
             if (err) {
               console.error('error writing file ' + dest, err)
