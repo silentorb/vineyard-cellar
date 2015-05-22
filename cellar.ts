@@ -10,6 +10,12 @@ var MetaHub = require('vineyard-metahub')
 class Cellar extends Vineyard.Bulb {
 
   grow() {
+    var path = require('path')
+    if (this.config.primary_key == 'guid')
+      this.load_schema('file_guid')
+    else if (this.config.primary_key == 'id')
+      this.load_schema('file_id')
+
     var lawn = this.vineyard.bulbs.lawn
     this.listen(lawn, 'http.start', (app)=> this.initialize_services(app))
   }
@@ -22,6 +28,11 @@ class Cellar extends Vineyard.Bulb {
     if (this.config.paths.cache && this.config.templates) {
       lawn.listen_user_http('/vineyard/cellar/:template/:guid.:ext', (req, res, user)=> this.file_download(req, res, user), 'get')
     }
+  }
+
+  load_schema(name) {
+    var path = require('path')
+    this.ground.load_schema_from_file(path.resolve(__dirname, 'schema/' + name + '.json'))
   }
 
   upload(req, res, user) {
