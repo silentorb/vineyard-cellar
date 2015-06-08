@@ -1,6 +1,6 @@
 {
   "name": "vineyard-cellar",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "File storage management for Vineyard",
   "main": "cellar.js",
   "repository": {
